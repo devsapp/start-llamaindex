@@ -1,12 +1,12 @@
 edition: 3.0.0
-name: start-llamaindex-dev
+name: start-llamaindex
 access: {{ access }}
 
 vars: # 全局变量
   region: "{{ region }}"
   name: "{{ projectname }}"
   model_type: "modelscope"
-#  dashscope_api_key: "{{ dashscope_api_key }}"
+  bailian_api_key: "{{ bailian_api_key }}"
 
 resources:
   VectorDB:
@@ -22,6 +22,7 @@ resources:
       extensions:
         - name: vector
 
+  {{if model_provider == "CAP 托管模型"}}
   Embedding:
     component: model
     props:
@@ -33,7 +34,6 @@ resources:
         framework: modelscope
         sourceType: modelscope
         srcModelScopeModelID: "{{ embedding_model }}"
-        srcModelScopeModelRevision:
       cpu: 8
       memorySize: 32768
       diskSize: 10240
@@ -50,39 +50,47 @@ resources:
         target: {{ embedding_instance_count }}
         alwaysAllocateGPU: false
         scheduledActions: []
-
+  {{/if}}
+  
+  {{if model_provider == "CAP 托管模型"}}
   LLM:
     component: model
     props:
       region: ${vars.region}
-      name: ${vars.name}-llm
-      description: "CAP 托管的 ollama 服务，内置 llama3:8b 模型"
-      modelConfig:
-        sourceType: custom-container
       role: "acs:ram::${config(\"AccountID\")}:role/aliyundevsdefaultrole"
-      timeout: 600
-      diskSize: 10240
+      name: '${vars.name}-llm'
+      description: CAP 托管的 DeepSeek-R1 模型服务
+      modelConfig:
+        framework: ollama
+        sourceType: oss
+        srcOssRegion: ${vars.region}
+        srcOssBucket: 'dipper-cache-${vars.region}'
+        srcOssPath: cap-session/DeepSeek-R1-Distill-Qwen-7B-GGUF-lmstudio
+        fmkOllamaConfig:
+          modelName: cap-deepseek-r1
+          singleModelFile: DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf
+          modelfileParams: '{"num_ctx": 131072,"stop":["<｜begin▁of▁sentence｜>","<｜end▁of▁sentence｜>","<｜User｜>","<｜Assistant｜>"]}'
+          modelfileTemplate: 'e3stIGlmIC5TeXN0ZW0gfX17eyAuU3lzdGVtIH19e3sgZW5kIH19Cnt7LSByYW5nZSAkaSwgJF8gOj0gLk1lc3NhZ2VzIH19Cnt7LSAkbGFzdCA6PSBlcSAobGVuIChzbGljZSAkLk1lc3NhZ2VzICRpKSkgMX19Cnt7LSBpZiBlcSAuUm9sZSAidXNlciIgfX08772cVXNlcu+9nD57eyAuQ29udGVudCB9fQp7ey0gZWxzZSBpZiBlcSAuUm9sZSAiYXNzaXN0YW50IiB9fTzvvZxBc3Npc3RhbnTvvZw+e3sgLkNvbnRlbnQgfX17ey0gaWYgbm90ICRsYXN0IH19PO+9nGVuZOKWgW9m4paBc2VudGVuY2XvvZw+e3stIGVuZCB9fQp7ey0gZW5kIH19Cnt7LSBpZiBhbmQgJGxhc3QgKG5lIC5Sb2xlICJhc3Npc3RhbnQiKSB9fTzvvZxBc3Npc3RhbnTvvZw+e3stIGVuZCB9fQp7ey0gZW5kIH19'
       cpu: 8
       memorySize: 32768
+      diskSize: 10240
       gpuConfig:
         gpuMemorySize: 16384
         gpuType: fc.gpu.tesla.1
+      vpcConfig: auto
+      nasConfig: auto
       logConfig: auto
-      runtime: custom-container
-      customContainerConfig:
-        port: 8000
-        image: "registry.${vars.region}.aliyuncs.com/aliyun-fc/ollama:capv1"
-      httpTrigger: "auto"
-      environmentVariables:
-        MODEL: "llama3:8b"
-      # never used in deployment. Only used in console view
+      timeout: 6000
+      provisionConfig:
+        target: 1
+        alwaysAllocateGPU: false
+      instanceConcurrency: 2
+      concurrencyConfig:
+        reservedConcurrency: 2
       annotations:
         modleID: "{{ llm_model}}"
         instanceType: "{{ llm_instance_type }}"
-      provisionConfig:
-        target: {{ llm_instance_count }}
-        alwaysAllocateGPU: false
-        scheduledActions: []
+  {{/if}}
 
   OfflineEmbedding:
     component: fc3
@@ -202,31 +210,29 @@ resources:
       provisionConfig:
         target: 1
         alwaysAllocateGPU: false
-        scheduledActions: []
+        alwaysAllocateCPU: false
 
-  WebUI:
+  OpenWebUI:
     component: fc3
+    actions:
+      complete-deploy:
+        - run: sleep 120
     props:
       region: ${vars.region}
-      handler: index.handler
-      description: "在线问答的 WebUI：将开源项目 ChatGPT-NextWeb 部署到阿里云函数计算"
-      timeout: 60
-      diskSize: 512
-      internetAccess: true
-      functionName: ${vars.name}-webui-nextchat
-      functionType: web
-      runtime: custom-container
-      cpu: 0.35
-      customContainerConfig:
-        image: registry-vpc.${vars.region}.aliyuncs.com/aliyun-fc/nextchat:v1
-        port: 3000
-      version: LATEST
-      instanceConcurrency: 20
-      environmentVariables:
-        BASE_URL: ${resources.OnlineProcessor.info.url.system_intranet_url}
-        CUSTOM_MODELS: -all,llama3
-      memorySize: 512
+      functionName: '${vars.name}-openwebui'
+      description: "在线问答的 WebUI：托管开源项目 OpenWebUI"
       logConfig: auto
+      instanceConcurrency: 20
+      runtime: custom-container
+      timeout: 600
+      diskSize: 10240
+      cpu: 4
+      memorySize: 8192
+      customContainerConfig:
+        port: 8080
+        image: registry-vpc.${vars.region}.aliyuncs.com/aliyun-fc/openwebui:v0.5.12
+      provisionConfig:
+        target: 1
       triggers:
         - triggerConfig:
             methods:
@@ -241,6 +247,17 @@ resources:
           description: ''
           qualifier: LATEST
           triggerType: http
+      environmentVariables:
+        OPENAI_API_BASE_URL: ${resources.OnlineProcessor.info.url.system_intranet_url}
+        ENABLE_OPENAI_API: "true"
+        WEBUI_AUTH: "false"
+        TZ: "Asia/Shanghai"
+        DEFAULT_LOCALE: "zh_CN"
+        DEFAULT_USER_ROLE: "admin"
+        WEBUI_NAME: "CAP + Open WebUI "
+        DEFAULT_MODELS: "cap-deepseek-r1"
+        TASK_MODEL: "cap-deepseek-r1"
+        WEBUI_BANNERS: "[{\"id\": \"1\", \"type\": \"Tips\", \"title\": \"温馨提示\", \"content\": \"建议使用后及时清理资源。\", \"dismissible\": true, \"timestamp\": 1000}]"
       customDomain:
         protocol: "HTTP"
         route:

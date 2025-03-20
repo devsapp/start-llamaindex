@@ -17,14 +17,14 @@ import logging
 logger = logging.getLogger()
 
 host = os.getenv("PG_HOST")
-port = os.getenv("PG_PORT")
+port = os.getenv("PG_PORT", "5432")
 database = os.getenv("PG_DATABASE")
 table_name = os.getenv("TABLE_NAME")
 user = os.getenv("PG_USER")
 password = os.getenv("PG_PASSWORD")
-chunk_size = int(os.getenv("CHUNK_SIZE"), 512)
-chunk_overlap = int(os.getenv("CHUNK_OVERLAP"), 64)
-dimension = int(os.getenv("DIMENSION"), 768)
+chunk_size = int(os.getenv("CHUNK_SIZE", 512))
+chunk_overlap = int(os.getenv("CHUNK_OVERLAP", 64))
+dimension = int(os.getenv("DIMENSION", 768))
 
 
 def initializer(context):

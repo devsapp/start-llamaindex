@@ -1,5 +1,5 @@
 import os
-
+from schema import *
 from llama_index.core import VectorStoreIndex, StorageContext, Settings
 from llama_index.core.llms import ChatMessage
 from llama_index.llms.ollama import Ollama
@@ -23,6 +23,7 @@ password = os.getenv("PG_PASSWORD")
 # model config
 model_type = os.getenv("MODEL_TYPE")
 ollama_url = os.getenv("OLLAMA_LLM_ENDPOINT")
+ollama_llm_model = os.getenv("OLLAMA_LLM_MODEL", "cap-deepseek-r1")
 
 dashscope_embedding_model = os.getenv("DASHSCOPE_EMBEDDING_MODEL", DashScopeTextEmbeddingModels.TEXT_EMBEDDING_V2)
 dashscope_llm_model = os.getenv("DASHSCOPE_LLM_MODEL", DashScopeGenerationModels.QWEN_MAX)
@@ -33,7 +34,7 @@ def initializer():
     Description: Init llamaindex settings with model config and init chat engine with vectordb config.
     """
     embed_model = ModelScopeEmbedding()  # by default
-    llm_model = Ollama(model="llama3:8b", base_url=ollama_url)
+    llm_model = Ollama(model=ollama_llm_model, base_url=ollama_url, request_timeout=600.0)
     dimension = 768
 
     if model_type.lower() == "dashscope":
@@ -68,7 +69,7 @@ def initializer():
                                            "你是一个聊天机器人，需要和提问者进行正常互动"
                                            "这里是和提问相关的上下文\n"
                                            "{context_str}"
-                                           "\n说明：根据以上信息与 chat history，对用户问题提供详细解答。你需要用简体中文回答问题。"
+                                           "\n说明：根据以上信息与聊天历史，对用户问题提供详细解答。需要用简体中文回答问题。"
                                        ),
                                        )
     print("Initialized with modeltype: {}, database: {} and table_name: {}".format(model_type, database, table_name))
@@ -87,9 +88,29 @@ def chat(message: str, chat_history: list[ChatMessage]) -> str:
 
     Returns:
         - str
-          e.g.: "CAP（Cloud Application Platform）是云原生应用开发平台，全称为 Cloud Application Platform，简称 CAP。CAP立足于 Serverless && AI，通过丰富的模板、流程式编排、组装式研发让应用开发更简单。Serverless 形态的云资源既保障了业务弹性可扩展，又降低企业上云成本"
+          e.g.: "CAP（Cloud Application Platform）是云原生应用开发平台，全称为 Cloud Application Platform，简称 CAP。CAP立足于 Serverless && AI，通过丰富的模板、流程式编排、组装式研发让应用开发更简单。Serverless 
+          形态的云资源既保障了业务弹性可扩展，又降低企业上云成本"
     """
-    response = chat_engine.chat(message, chat_history=chat_history)
+    response = chat_engine.stream_chat(message, chat_history=chat_history)
+    for chunk in response.response_gen:
+        print(chunk)
+        yield f"data: {to_openai_response(chunk).json()}\n\n"
 
-    print("Got response: {}\n", response.response)
-    return response.response
+
+def to_openai_response(message: str) -> ChatCompletionResponse:
+    """
+    DESCRIPTION: convert message to openai-like response
+    """
+
+    return ChatCompletionResponse(
+        choices=[
+            ChatCompletionChoice(
+                finish_reason="",
+                index=0,
+                delta=ChatCompletionMessage(
+                    content=message,
+                    role=ChatMessageRole.Assistant,
+                )
+            )
+        ]
+    )
